@@ -1,0 +1,2 @@
+A reproducible example showing how to apply the reference-free method for estimation of the cell-type proportions in a sample using `RefFreeEWAS` package (Houseman et al. 2016). 
+A more detailed description of each step and the theoretical background plus a rendered R code and session info are available in the docs directory of this repository (https://github.com/paujedynak/reffree_cell_mix_tutorial/blob/master/docs/reffree_cell_mix_tutorial.pdf and https://rpubs.com/paujedynak/reffree_cell_mix_tutorial, respectively).
