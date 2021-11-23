@@ -3,8 +3,8 @@ title: "Estimation of the cell-type proportions using reference-free method (Ref
 author:
   
 - name: Paulina Jedynak, PhD
-  affiliation: Team of Environmental Epidemiology applied to Reproduction and Respiratory Health, Inserm, CNRS, University Grenoble Alpes, Institute for Advanced Biosciences (IAB), U1209 Joint Research Center, Grenoble, France
-  email: paulina.jedynak@univ-grenoble-alpes.fr
+  affiliation: Team of Environmental Epidemiology applied to Development and Respiratory Health, Inserm, CNRS, University Grenoble Alpes, Institute for Advanced Biosciences (IAB), U1209 Joint Research Center, Grenoble, France
+  email: paulina.jedynak@univ-grenoble-alpes.fr, paulina.jedynak@gmail.com
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
   html_document:
@@ -22,7 +22,7 @@ fontsize: 11pt
 geometry: margin = 1in
 keywords: DNA methylation, cell-type proportions, ref-free based method, RefFreeEWAS
 bibliography: reffree_cell_mix.bib
-abstract: This is a reproducible example showing how to apply the reference-free method for estimation of the cell-type proportions in a sample using RefFreeEWAS package [@houseman2016]. A more detailed description of each step and theoretical background is available in the supplementary file reffree_cell_mix_tutorial.pdf to be found at https://github.com/paujedynak/reffree_cell_mix_tutorial
+abstract: This is a reproducible example showing how to apply the reference-free method for estimation of the cell-type proportions in a sample using RefFreeEWAS package [@houseman2016]. A more detailed description of each step and theoretical background is available in the supplementary file reffree_cell_mix_tutorial.pdf to be found at https://bit.ly/3nJaqpS
 ---
 
 ```{r setup, include = FALSE}
