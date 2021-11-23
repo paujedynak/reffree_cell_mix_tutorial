@@ -25,7 +25,7 @@ bibliography: reffree_cell_mix.bib
 abstract: This is a reproducible example showing how to apply the reference-free method for estimation of the cell-type proportions in a sample using RefFreeEWAS package [@houseman2016]. A more detailed description of each step and theoretical background is available in the supplementary file reffree_cell_mix_tutorial.pdf to be found at https://github.com/paujedynak/reffree_cell_mix_tutorial
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE, include = TRUE, message = FALSE)
 ```
 
@@ -33,28 +33,44 @@ knitr::opts_chunk$set(echo = TRUE, include = TRUE, message = FALSE)
 
 ```{r, warning = FALSE}
 # Install and load needed packages
-list_packages <- c("RefFreeEWAS", "FactoMineR", "factoextra")
+list_packages <- c("dplyr", "RefFreeEWAS", "FactoMineR", "factoextra", "brgedata", "minfi")
 new_packages <- list_packages[!(list_packages %in% installed.packages()[, "Package"])]
 
 if (length(new_packages)) {
   install.packages(new_packages)
 }
 
+if (!isTRUE("medepir" %in% installed.packages()[, "Package"])) {
+  remotes::install_github("bcm-uga/medepir")
+}
+
+library(dplyr)
 library(RefFreeEWAS)
 library(FactoMineR)
 library(factoextra)
+library(brgedata)
+library(minfi)
+library(medepir)
 ```
-
 
 ```{r}
-# Load data
-data(HNSCC)
-print(Y.HNSCC.averageBetas[1:4, 1:4])
+# Load an open source methylation dataset 
+data(brge_methy) # brge_methy is a GenomicRatioSet with methylation data corresponding to the Illumina Human Methylation 450K. It contains 392,277 probes and 20 samples. The object contains 9 phenotypic variables (age, sex and cell types proportions)
 
-# Create exemplary datasets
-short <- Y.HNSCC.averageBetas[sample(1:1000, 500), ]
-final <- Y.HNSCC.averageBetas[1:1000, ]
+# Retrieve methylation beta values
+methylation_matrix <- minfi::getBeta(brge_methy) # 392,277 x 20
+
+# To save computational time, create dataset subsets
+set.seed(12345)
+short <- methylation_matrix[sample(1:dim(methylation_matrix)[1], 500), ] # 500 x 20
+final <- methylation_matrix[sample(1:dim(methylation_matrix)[1], 1000), ] # 1,000 x 20
+
+# Retrieve covariates data
+convariates_dataset <- colData(brge_methy) %>% 
+  as.data.frame()
 ```
+
+
 
 ****
 
@@ -62,23 +78,26 @@ final <- Y.HNSCC.averageBetas[1:1000, ]
 
 Note: The right choice of K is crucial for a successful estimation of cell proportions. Using a subset of probes enables more precise estimation of K as well as saves computational time. There are different methods of probe selection, e.g. selection based on the probes' variability (e.g. 10,000 most variable probes can be used). Another interesting method is removing the probes whose methylation is affected by factors that are not influencing cell proportions [@decamps2020].   
 
-Below I present an exemplary code to select the probes with both methods:
-
-```{r, eval = FALSE}
-# Selecting 10,000 most variable probes
-variance <- apply(methylation_matrix, 2, var, na.rm = TRUE)
-most_variant_10k <- methylation_matrix[, names(variance[order(variance, decreasing = TRUE)][1:10000])]
+```{r}
+# Option 1: Selecting 10,000 most variable probes
+variance <- apply(methylation_matrix, 1, var, na.rm = TRUE)
+most_variant_10k <- methylation_matrix[names(variance[order(variance, decreasing = TRUE)][1:10000]), ]
 ```
 
-```{r, eval = FALSE}
-# Filtering out the probes whose methylation is associated with factors that are not influencing cell proportions (like: batch effect). For details see Decamps et al. 2020 and package medepir
+```{r}
+# Option 2: Filtering out the probes whose methylation is associated with factors that are not influencing cell proportions (like: batch effect). For details see Decamps et al. 2020 and package medepir
 
-# Choose factors that are affecting methylation but not influencing cell proportions 
+# NOTE: see e.g., the discussion here https://github.com/bcm-uga/medepir/issues/3#issuecomment-953653677 on how to choose these factors.
+# Since "affect methylation but not the cell mix" may mean different things, two scenarios could be considered: 1) variables affecting methylation but not associated in 'real life' with the cell mix (e.g., I would not consider variables that happen after the constitution of the cell mix, e.g., delivery mode that happens after placental cell proportions constitution); 2) all variables associated with methylation (ignoring the 'real life' chronology explained above). 
+# In the Decamps et al. 2020 paper, the entire metadata file is given to the CF_detection function, and the confounding factors are: maternal age and child sex (the authors also suggest to add information on smoking status and technical factors, if available).
+# Defining which confounders you want to include in your analysis is really up to you, you are the data-analyst and the expert of your specific scientific question. There is always a risk to remove probes also associated with the biological processes you are interested in. This is why it is very important to bring your own expertise to identify the relevant biological priors you need to use in your analysis framework.
 convariates_dataset <- convariates_dataset %>%
-  dplyr::select(factor_1, factor_2, factor_3, factor_4)
+  dplyr::select(age, sex) # Age and sex are the only phenotypic variables available for this exemplary dataset, so I choose them. See comment above on how to choose your own predictors.
 
 # Select the probes
-selected_probes <- medepir::CF_detection(D = methylation_matrix, exp_grp = convariates_dataset)
+selected_probes <- medepir::CF_detection(D = short, exp_grp = convariates_dataset) # 487 * 20, 13 CpGs were excluded as linearly associated with methylation
+
+# D is the input methylation matrix (in this case it contains 500 CpGs due to the computational time constrains, this would be replaced by 'methylation_matrix' in real life); exp_grp is the matrix of phenotypic data for all the patients, restricted to variables affecting methylation.
 ```
 
 
@@ -88,7 +107,7 @@ If we decided to use 10k most variable probes, we can continue with the algorith
 
 ```{r}
 # Run an estimation for a subset of CpG probes, with different values of K
-# Y is the input methylation matrix (in this case it contains 500 CpGs, this would be replaced by 'most_variant_10k').
+# Y is the input methylation matrix (in this case it contains 500 CpGs due to the computational time constrains, this would be replaced by 'most_variant_10k' in real life).
 # Klist represents values of K to be tested (for the purpose of the tutorial I test Ks from 1 to 10)
 omega_array <- RefFreeEWAS::RefFreeCellMixArray(Y = short, Klist = 1:10)
 ```
@@ -98,7 +117,7 @@ omega_array <- RefFreeEWAS::RefFreeCellMixArray(Y = short, Klist = 1:10)
 ```{r}
 # Run bootstrap analysis to estimate deviance for each K
 # rfArray is a list of RefFreeCellMix objects, Y is the input methylation matrix (in this case it
-# contains 500 selected CpGs) and R is a number of bootstrapped vectors to return
+# contains 500 selected CpGs due to the computational time constrains, this would be replaced by 'most_variant_10k' in real life) and R is a number of bootstrapped vectors to return
 set.seed(13446)
 testBootDevs <- RefFreeEWAS::RefFreeCellMixArrayDevianceBoots(rfArray = omega_array, Y = short, R = 10)
 
@@ -111,63 +130,58 @@ An optimal K is `r which.min(mean_dev)`.
 
 ```{r}
 # Assign a value of K for further steps
-K_optimal_deviance <- which.min(mean_dev)
+K_optimal_deviance <- which.min(mean_dev) # The obtained optimal K equal to 1 is not very interesting as it means that there is no variability due to the cellular heterogeneity. This comes from the fact that only 500 probes were used
+
+# I change the optimal K to some random number, to make the example more interesting
+K_optimal_deviance <- 4
 ```
 
 
-If we decided to use probes remaining after exclusion of those whose methylation is affected by factors that are not influencing cell proportions, we can continue with the algorithm proposed by Decamps et al. They propose a visual inspection of the scree plot (showing the eigenvalues of the selected probes methylation matrix in descending order) as a powerful technique to choose the optimal K. For choosing K, Cattell’s rule is applied, which states that components corresponding to eigenvalues to the left of the straight line should be retained ([@cattell1966]). When the actual number of different cell types is equal to K, we expect that there are (K-1) eigenvalues would correspond to the mixture of cell types and that other eigenvalues would correspond to noise (or other unaccounted for confounders).
+If we decided to use probes remaining after exclusion of those whose methylation is affected by factors that are not influencing cell proportions, we can continue with the algorithm proposed by Decamps et al. They propose a visual inspection of the scree plot (showing the eigenvalues of the selected probes methylation matrix in descending order) as a powerful technique to choose the optimal K. For choosing K, Cattell’s rule is applied, which states that components corresponding to eigenvalues to the left of the straight line should be retained ([@cattell1966]). When the actual number of different cell types is equal to K, we expect that (K-1) eigenvalues would correspond to the mixture of cell types and that other eigenvalues would correspond to noise (or other confounders unaccounted for).
 
 ```{r}
 # Run PCA on selected probes methylation matrix and plot results
-# X is the input methylation matrix (in this case it contains 500 CpGs, this would be replaced by 'selected_probes').
-pca <- FactoMineR::PCA(X = t(short), graph = FALSE)
+# X is the input methylation matrix of selected probes
+pca <- FactoMineR::PCA(X = t(selected_probes))
 factoextra::fviz_screeplot(X = pca, geom = "line")
 ```
 
-Using Cattlle's rule we choose the optimal K to be 6.
+Using Cattlle's rule we choose the optimal K to be 5.
 
 ```{r}
 # Assign a value of K for further steps
-K_optimal_scree <- 6
+K_optimal_scree <- 5
 ```
 
 ****
 
 ### PART II: Estimate cell mix proportion using chosen K
 
-At this step we use the subset of probes (selected by one method or another) and the corresponding optimal K to estimate the final cell mix proportion. There are several algorithms for doing it, in this tutorial I present only the one proposed by Houseman et al. (from the `RefFreeEWAS` package)
+At this step we use the subset of probes (selected by one method or another) and the corresponding optimal K to estimate the final cell mix proportion. There are several algorithms for doing it, in this tutorial I present only the one proposed by Houseman et al. (from the `RefFreeEWAS` package), without explicit initialization of the M matrix (recommended). There is an ongoing debate what should be the initialization matrix, as it can significantly influence the results of the cell-type proportion estimation [@decamps2020]. One solution would be to obtain cell-type proportions using both methods and compare the deviance of Y matrices reconstructed using each solution with the original input matrix Y, and choosing the cell-type proportion matrix returning lower deviance from original matrix Y.    
 
-Without explicit initialization of the M matrix (recommended). There is an ongoing debate what should be the initialization matrix, as it can significantly influence the results of the cell-type proportion estimation [@decamps2020]. 
-One solution would be to obtain cell-type proportions using both methods and compare the deviance of Y matrices reconstructed using each solution with the original input matrix Y, and choosing the cell-type proportion matrix returning lower deviance from original matrix Y.
+NOTE: For the `RefFreeCellMix` algorithm, the cell proportions may not sum up to one - this is normal due to the RefFreeEWAS convergence algorithm that applies some constrains to the estimates.
 
 
-```{r, eval = FALSE}
+```{r}
 # Houseman
-# Estimate cell mix proportion without explicit initialization basing on 10k most variable probes
-# Y represents the input methylation matrix (this time containing either the subset of probes 'most_variant_10k' or all available CpGs) and K_optimal is the value of K that was chosen in PART I
+# Estimate cell mix proportion without explicit initialization basing on 10k most variable probes or the entire methylation matrix
+# Y represents the input methylation matrix (in this case it contains 500 selected CpGs due to the computational time constrains, but it would be replaced by either 'most_variant_10k' or 'methylation_matrix' in real life) and K_optimal is the value of K that was chosen in PART I
 
-cell_mix <- RefFreeEWAS::RefFreeCellMix(Y = most_variant_10k, K = K_optimal_deviance, verbose = FALSE)
-# OR
-cell_mix <- RefFreeEWAS::RefFreeCellMix(Y = methylation_matrix, K = K_optimal_deviance, verbose = FALSE)
+# Computationally heavy!
+cell_mix <- RefFreeEWAS::RefFreeCellMix(Y = short, K = K_optimal_deviance, verbose = FALSE)
 
+# Print omega (cell mix proportions for each sample). Columns indicate the cell types (from 1 to 4) and rows - individuals
+head(cell_mix$Omega)
 ```
 
 
-```{r, eval = FALSE}
+```{r}
 # Decamps
 # Estimate cell mix proportion without explicit initialization basing on selected probes remaining after removal of probes whose methylation is not associated with cell mix
 # Y represents the input methylation matrix (containing the subset of probes 'selected_probes') and K_optimal is the value of K that was chosen in PART I
 cell_mix <- RefFreeEWAS::RefFreeCellMix(Y = selected_probes, K = K_optimal_scree, verbose = FALSE)
-```
 
-
-An exemplary estimation of the cell proportions matrix will look as follows
-
-```{r, include = FALSE}
-# Estimate cell mix proportion without explicit initialization 
-cell_mix <- RefFreeEWAS::RefFreeCellMix(Y = short, K = K_optimal_deviance, verbose = FALSE)
-
-# Print omega (cell mix proportions for each sample). Columns indicate the cell types (from 1 to 6) and rows - individuals
+# Print omega (cell mix proportions for each sample). Columns indicate the cell types (from 1 to 5) and rows - individuals
 head(cell_mix$Omega)
 ```
 
@@ -194,7 +208,7 @@ Yfinal = NULL = Y
 
 ```{r}
 # Run cell-type proportion estimation without Yfinal argument
-# Y is the input methylation matrix, in this case it contains 500 selected CpGs, K_optimal is the value of K that was chosen in PART II and Yfinal is NULL so by defaul it equals Y
+# Y is the input methylation matrix, in this case it contains 500 selected CpGs, K_optimal is the value of K that was chosen in PART II and Yfinal is NULL so by default it equals Y
 cell_mix_Y <- RefFreeEWAS::RefFreeCellMix(Y = short, K = K_optimal_deviance, Yfinal = NULL, verbose = FALSE)
 
 # Print omega and mu for estimation without Yfinal argument
